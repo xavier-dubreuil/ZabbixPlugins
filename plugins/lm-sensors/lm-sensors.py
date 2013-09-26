@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys,os,json,httplib,re
+import sys,os,re
 
 
 regexp = {

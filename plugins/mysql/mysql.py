@@ -2,6 +2,11 @@
 
 import sys,os
 
+DBHost="localhost"
+DBPort="3306"
+DBName="zabbix"
+DBUser="zabbix"
+DBPass=""
 
 #
 # Command line options
