@@ -9,7 +9,8 @@ import ConfigParser
 import time
 
 # Configuration file
-conf_file = "freebox.ini"
+script_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
+conf_file  = script_dir+"/freebox.ini"
 
 # Freebox host
 fb_host        = "mafreebox.freebox.fr"
@@ -24,6 +25,13 @@ fb_url_connection_xdsl = fb_url_connection+"/xdsl"
 fb_url_connection_ftth = fb_url_connection+"/ftth"
 fb_url_rrd             = "/rrd/"
 
+# Freebox variables
+fb_type        = None
+fb_name        = None
+fb_uid         = None
+fb_api_url     = None
+fb_api_version = None
+
 # Session
 fb_token = None
 
@@ -37,6 +45,19 @@ device_name ="zabbix_agent"
 api = ConfigParser.RawConfigParser()
 if os.access(conf_file, os.R_OK):
     api.read(conf_file)
+
+#
+# Script print functions
+#
+def actionPrint(str):
+    sys.stdout.write(str.ljust(50))
+    sys.stdout.flush()
+    
+def actionOK():
+    print "[ \033[32mOK\033[37m ]"
+
+def actionKO(error):
+    print "[ \033[31mKO\033[37m ] : "+error
 
 
 #
@@ -53,8 +74,8 @@ def httpJson(url, data):
 
         # URI construction
         uri = "" 
-        uri += api.get("API", "fb_api_url") if api.has_option("API", "fb_api_url") else ""
-        uri += api.get("API", "fb_api_version") if api.has_option("API", "fb_api_version") else ""
+        uri += fb_api_url if fb_api_url != None else ""
+        uri += fb_api_version if fb_api_version != None else ""
         uri += url
 
         # HTTP call
@@ -95,6 +116,24 @@ def hmac_sha1(key, msg):
     return hmac.new(key, msg, sha1).hexdigest()
 
 
+def getAPIVersion():
+
+    global fb_type,fb_name,fb_uid,fb_api_url,fb_api_version
+
+    # Call api version
+    json = httpJson(fb_url_api_version, {})
+    if not json:
+        return False
+
+    fb_type        = json["device_type"]
+    fb_name        = json["device_name"]
+    fb_uid         = json["uid"]
+    fb_api_url     = json["api_base_url"]
+    fb_api_version = "v"+str(int(float(json["api_version"])))
+
+    return True
+
+
 #
 # Configure method
 #
@@ -103,20 +142,6 @@ def configure(param):
     # Create ConfigParser
     global api
 
-    # Call api version
-    json = httpJson(fb_url_api_version, {})
-    if not json:
-        return
-
-    # Configuration filling
-    if not api.has_section("API"):
-        api.add_section("API")
-    api.set("API", "fb_type"       , json["device_type"])
-    api.set("API", "fb_name"       , json["device_name"])
-    api.set("API", "fb_uid"        , json["uid"])
-    api.set("API", "fb_api_url"    , json["api_base_url"])
-    api.set("API", "fb_api_version", "v"+str(int(float(json["api_version"]))))
-
     # Construct authorize parameters
     data = {
         "app_id"      : app_id,
@@ -124,29 +149,60 @@ def configure(param):
         "app_version" : app_version,
         "device_name" : device_name}
 
-    print "Please accept authorize on Freebox"
+    # Check configuration file write availability
+    actionPrint("Opening configuration file")
+    try:
+        handle_file = open(conf_file, 'wb')
+    except:
+        actionKO('Unable to open for writing conf file: '+conf_file)
+        sys.exit(1)
+    actionOK()
+
+    # Get API informations
+    actionPrint("Getting Freebox API informations")
+    if not getAPIVersion():
+        actionKO("Unable to get API informations")
+        sys.exit(1)
+    actionOK()
+
+    actionPrint("Validate authorization on your Freebox")
 
     # Call authorize function
     json = httpJson(fb_url_login_authorize, data)
     if not json:
-        return
-    
+        actionKO("Unable to get authorization from API")
+        sys.exit(1)
+
     # Waiting token state
     state = "pending"
     while state == "pending":
         time.sleep(3);
         token = httpJson(fb_url_login_authorize+"/"+str(json["track_id"]), {})
+        if not token:
+            actionKO("Unable to get authorization from API")
+            sys.exit(1)
         state = token["status"]
 
     # Configuration filling
-    if state == "granted":
-        if not api.has_section("Authorize"):
-            api.add_section("Authorize")
-        api.set("Authorize", "token", json["app_token"])
+    if state != "granted":
+        actionKO("Authorization refused")
+        sys.exit(1)
+    
+    # Add token to configuration
+    if not api.has_section("Authorize"):
+        api.add_section("Authorize")
+    api.set("Authorize", "token", json["app_token"])
 
-    # Writing configuration
-    with open(conf_file, 'wb') as configfile:
-        api.write(configfile)
+    actionOK()        
+
+    # Check configuration file write availability
+    actionPrint("Writing configuration file")
+    try:
+        api.write(handle_file)
+    except:
+        actionKO('Unable to write the configuration file: '+conf_file)
+        sys.exit(1)
+    actionOK()
 
 
 #
@@ -156,10 +212,15 @@ def login():
 
     global fb_token
 
+    if not getAPIVersion():
+        print "0"
+        sys.exit(1)
+
     # Call API to log in
     login = httpJson(fb_url_login, {})
     if not login:
-        return False
+        print "0"
+        sys.exit(1)
     
     # Construction for API session
     data = {
@@ -169,7 +230,8 @@ def login():
     # Call API for a session
     session = httpJson(fb_url_login_session, data)
     if not session:
-        return False
+        print "0"
+        sys.exit(1)
 
     # Set Session to variable
     fb_token = session["session_token"]
@@ -189,7 +251,8 @@ def connection(param):
     if json and param[0] in json:
         print json[param[0]]
     else:
-     print "0"
+        print "0"
+        sys.exit(1)
 
 
 #
@@ -206,7 +269,8 @@ def connectionXDSL(param):
     if json and param[0] in json and param[1] in json[param[0]]:
         print json[param[0]][param[1]]
     else:
-     print "0"
+        print "0"
+        sys.exit(1)
 
 
 #
@@ -223,7 +287,35 @@ def connectionFTTH(param):
     if json and param[0] in json and param[1] in json[param[0]]:
         print json[param[0]][param[1]]
     else:
-     print "0"
+        print "0"
+        sys.exit(1)
+
+
+#
+# Get RRD informations
+#
+def rrd(param):
+
+    login()
+    
+    timestamp = int(time.time())
+    
+    data = {
+        "db"         : param[0],
+        "fields"     : [ param[1] ],
+        "date_start" : timestamp,
+        "date_end"   : timestamp+10
+    }
+    
+    # Call API for RRD informations
+    json = httpJson(fb_url_rrd, data)
+
+    # Print value if exists
+    if json and "data" in json and len(json["data"]) > 0 and param[1] in json["data"][0]:
+        print json["data"][0][param[1]]
+    else:
+        print "0"
+        sys.exit(1)
 
 
 #
@@ -244,6 +336,10 @@ functions = {
     },
     "connection.ftth"   : {
         "function" : connectionFTTH,
+        "argv"     : 2
+    },
+    "rrd"   : {
+        "function" : rrd,
         "argv"     : 2
     }
 }
@@ -266,3 +362,4 @@ if __name__ == "__main__":
         # Call the function with the parameter
         functions[func]["function"](param)
 
+    sys.exit(0)
