@@ -1,10 +1,33 @@
 #!/usr/bin/python
 
-import sys,os,json,httplib
+import sys
+import os
+import json
+import httplib
+import ConfigParser
+import getpass
 
-host = "localhost"
-port = "8080"
-apikey = "5c7831f258b42b38ed64ddd89f956c15"
+# Configuration file
+script_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
+conf_file  = script_dir+"/script_sabnzbd.conf"
+
+# Configuration variables
+config = ConfigParser.RawConfigParser()
+if os.access(conf_file, os.R_OK):
+    config.read(conf_file)
+
+#
+# Script print functions
+#
+def actionPrint(str):
+    sys.stdout.write(str.ljust(50))
+    sys.stdout.flush()
+    
+def actionOK():
+    print "[ \033[32mOK\033[0m ]"
+
+def actionKO(error):
+    print "[ \033[31mKO\033[0m ] : "+error
 
 
 #
@@ -14,8 +37,8 @@ apikey = "5c7831f258b42b38ed64ddd89f956c15"
 #
 def getJSON():
     try:
-        conn = httplib.HTTPConnection(host, port)
-        conn.request("GET", "/sabnzbd/api?mode=queue&output=json&apikey="+apikey)
+        conn = httplib.HTTPConnection(config.get('Connection', 'host'), config.get('Connection', 'port'))
+        conn.request("GET", "/sabnzbd/api?mode=queue&output=json&apikey="+config.get('Connection', 'apikey'))
         r1 = conn.getresponse()
     except Exception:
         return { "error" : "SabNZBD is not reachable" }
@@ -132,10 +155,68 @@ def queue(param):
     print json["queue"]["noofslots"]
 
 
+def getKeyboard(text, default, secret):
+
+    title = text.ljust(25)
+    if default == "":
+        title += "".rjust(15)+" : "
+    else:
+        title += str("[ "+default+" ]").rjust(15)+" : "
+        
+    value = ""
+    if secret:
+        while value == "":
+            value = getpass.getpass(title)
+    else:
+        value = raw_input(title)
+        if value == "":
+            value = default
+    
+    return value
+        
+
+#
+# Configure method
+#
+def configure(param):
+
+
+    # Check configuration file write availability
+    actionPrint("Opening configuration file")
+    try:
+        handle_file = open(conf_file, 'wb')
+    except:
+        actionKO('Unable to open for writing configuration file: '+conf_file)
+        sys.exit(1)
+    actionOK()
+
+    # Add token to configuration
+    if not config.has_section("Connection"):
+        config.add_section("Connection")
+    
+    # MySQL informations   
+    config.set("Connection", "host"  , getKeyboard("Hostname", "localhost", False))
+    config.set("Connection", "port"  , getKeyboard("Port"    , "80"       , False))
+    config.set("Connection", "apikey", getKeyboard("API Key" , ""         , False))
+    
+    # Check configuration file write availability
+    actionPrint("Writing configuration file")
+    try:
+        config.write(handle_file)
+    except:
+        actionKO('Unable to write the configuration file: '+conf_file)
+        sys.exit(1)
+    actionOK()
+
+
 #
 # Function list definition
 #
 functions = {
+    "configure"   : {
+        "function" : configure,
+        "argv"     : 0
+    },
     "ping"   : {
         "function" : ping,
         "argv"     : 0

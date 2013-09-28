@@ -1,6 +1,10 @@
 #!/usr/bin/python
 
-import sys,os,re
+import sys
+import os
+import re
+import ConfigParser
+import getpass
 
 
 regexp = {
@@ -80,11 +84,19 @@ def sensors_regex(regex):
 
     return res
 
+def configure(param):
+
+    sys.exit(0)
+
 
 #
 # Function list definition
 #
 functions = {
+    "configure"   : {
+        "function" : configure,
+        "argv"     : 0
+    },
     "discovery" : {
         "function" : discovery,
         "argv"     : 1

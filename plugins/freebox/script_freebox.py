@@ -10,7 +10,7 @@ import time
 
 # Configuration file
 script_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
-conf_file  = script_dir+"/freebox.ini"
+conf_file  = script_dir+"/script_freebox.conf"
 
 # Freebox host
 fb_host        = "mafreebox.freebox.fr"
@@ -54,10 +54,10 @@ def actionPrint(str):
     sys.stdout.flush()
     
 def actionOK():
-    print "[ \033[32mOK\033[37m ]"
+    print "[ \033[32mOK\033[0m ]"
 
 def actionKO(error):
-    print "[ \033[31mKO\033[37m ] : "+error
+    print "[ \033[31mKO\033[0m ] : "+error
 
 
 #
